@@ -9,6 +9,7 @@
   "author": "programmer5000",
   "license": "AGPL-3.0",
   "dependencies": {
+    "ansi.js": "0.0.5",
     "node-fetch": "^2.1.2"
   }
 }

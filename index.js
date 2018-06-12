@@ -1,16 +1,27 @@
 const fs = require("fs");
 const path = require("path");
 const fetch = require("node-fetch");
+const readline = require("readline");
+const ansi = require("ansi.js");
+const cursor = ansi(process.stdout);
+
+const ESC = "\x1B[";
 
 const bypass = true;
-const delayAdd = 250;
+const delayAdd = 1000;
 const token = fs.readFileSync(path.join(__dirname, "token.txt")).toString().trim();
 
 const dir = "/home/max/Documents/dropbox-test";
 const tree = [];
+
+const clearAndLog = (...args) => {
+		cursor.moveToColumn(0).eraseLine();
+		console.log(...args);
+};
+
 const getTree = (thisDir = ".") => {
 	fs.readdirSync(path.join(dir, thisDir)).forEach(subItem => {
-		console.log(thisDir, subItem);
+		clearAndLog(thisDir, subItem);
 		if(fs.statSync(path.join(dir, thisDir, subItem)).isFile()){
 			tree.push(path.join(thisDir, subItem));
 		}else{
@@ -19,27 +30,58 @@ const getTree = (thisDir = ".") => {
 	});
 };
 getTree();
-console.log(tree);
+clearAndLog(tree);
 const promises = [];
 
 const sleep = delay => new Promise(resolve => setTimeout(resolve, delay));
 
 const queue = {};
 
+const getStatus = () => {
+	const entries = Object.entries(queue);
+	let queued = 0;
+	let started = 0;
+	let finished = 0;
+	entries.forEach(([file, status]) => {
+		switch (status) {
+			case 0:
+				queued ++;
+				break;
+			case 1:
+				started ++;
+				break;
+			case 3:
+				finished ++;
+		}
+	});
+	return {queued, started, finished};
+};
+
+const updateBar = () => {
+	let {queued, started, finished} = getStatus();
+	const columns = process.stdout.columns - 1;
+	cursor.moveToColumn(0).eraseLine().
+  write("[" + "=".repeat(Math.floor(finished / tree.length * columns)) + " ".repeat(Math.floor((tree.length - finished) / tree.length * columns)) + "]");
+};
+
 tree.forEach((file, inc) => {
 	queue[file] = 0;
+	updateBar();
 	const isBigFile = fs.statSync(path.join(dir, file)).size / 1000000 > 150;
-	console.log(file, isBigFile);
+	clearAndLog(file, isBigFile);
 	if(isBigFile){
 		queue[file] = 3;
+		updateBar();
 	}else{
 
 		const fetchIt = async function(delay){
 			await sleep(delay);
 			queue[file] = 1;
+			updateBar();
 			if(bypass){
 				await sleep(1000);
 				return queue[file] = 3;
+				updateBar();
 			}
 			const response = await fetch("https://content.dropboxapi.com/2/files/upload", {
 			  body: fs.createReadStream(path.join(dir, file)),
@@ -51,14 +93,16 @@ tree.forEach((file, inc) => {
 			  method: "POST"
 			});
 			if(response.ok){
-				console.log("uploaded", file);
+				clearAndLog("uploaded", file);
 				queue[file] = 3;
+				updateBar();
 				return await response.text();
 			}
 			queue[file] = 0;
+			updateBar();
 			if(response.status === 429){
 				const delay = parseInt(response.headers.get("Retry-After")) * 1000;
-				console.log("Waiting for", delay, "ms");
+				clearAndLog("Waiting for", delay, "ms");
 				return await fetchIt(delay);
 			}else{
 				const error = await response.text();
@@ -69,46 +113,28 @@ tree.forEach((file, inc) => {
 	}
 });
 Promise.all(promises).then(() => {
-	console.log("DONE");
+	clearAndLog("DONE");
 	process.exit();
 });
 
-
-// setInterval(()=>console.log(queue), 1000);
-
 if(process.stdout.isTTY){
-	console.log("press s for status.");
+	clearAndLog("press s for status.");
 	process.stdin.setRawMode(true);
 	process.stdin.resume();
 	process.stdin.on("data", (key) => {
 		key = key.toString();
 		switch(key){
 		 	case "\u0003":
-				console.log("bye!");
+				clearAndLog("bye!");
 				process.exit();
 				break;
 			case "s":
-				const entries = Object.entries(queue);
-				let queued = 0;
-				let started = 0;
-				let finished = 0;
-				entries.forEach(([file, status]) => {
-					switch (status) {
-						case 0:
-							queued ++;
-							break;
-						case 1:
-							started ++;
-							break;
-						case 3:
-							finished ++;
-					}
-				});
-
-				console.log(`${entries.length} total, ${queued} queued, ${started} started, ${finished} finished`);
+				let {queued, started, finished} = getStatus();
+				cursor.moveToColumn(0).eraseLine();
+				clearAndLog(`${tree.length} total, ${queued} queued, ${started} started, ${finished} finished`);
 				break;
 			default:
-				console.log("unknown key");
+				clearAndLog("unknown key");
     }
 	});
 }
