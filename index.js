@@ -14,14 +14,9 @@ const token = fs.readFileSync(path.join(__dirname, "token.txt")).toString().trim
 const dir = "/home/max/Documents/dropbox-test";
 const tree = [];
 
-const clearAndLog = (...args) => {
-		cursor.moveToColumn(0).eraseLine();
-		console.log(...args);
-};
-
 const getTree = (thisDir = ".") => {
 	fs.readdirSync(path.join(dir, thisDir)).forEach(subItem => {
-		clearAndLog(thisDir, subItem);
+		console.log(thisDir, subItem);
 		if(fs.statSync(path.join(dir, thisDir, subItem)).isFile()){
 			tree.push(path.join(thisDir, subItem));
 		}else{
@@ -30,7 +25,7 @@ const getTree = (thisDir = ".") => {
 	});
 };
 getTree();
-clearAndLog(tree);
+console.log(tree);
 const promises = [];
 
 const sleep = delay => new Promise(resolve => setTimeout(resolve, delay));
@@ -57,11 +52,17 @@ const getStatus = () => {
 	return {queued, started, finished};
 };
 
+const clearAndLog = (...args) => {
+		cursor.moveToColumn(0).eraseLine();
+		console.log(...args);
+		updateBar();
+};
+
 const updateBar = () => {
 	let {queued, started, finished} = getStatus();
-	const columns = process.stdout.columns - 1;
+	const columns = process.stdout.columns - 2;
 	cursor.moveToColumn(0).eraseLine().
-  write("[" + "=".repeat(Math.floor(finished / tree.length * columns)) + " ".repeat(Math.floor((tree.length - finished) / tree.length * columns)) + "]");
+  write("[" + "=".repeat(Math.floor(finished / tree.length * columns)) + " ".repeat(Math.ceil((tree.length - finished) / tree.length * columns)) + "]");
 };
 
 tree.forEach((file, inc) => {
