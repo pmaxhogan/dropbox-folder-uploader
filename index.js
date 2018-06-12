@@ -16,7 +16,6 @@ const tree = [];
 
 const getTree = (thisDir = ".") => {
 	fs.readdirSync(path.join(dir, thisDir)).forEach(subItem => {
-		console.log(thisDir, subItem);
 		if(fs.statSync(path.join(dir, thisDir, subItem)).isFile()){
 			tree.push(path.join(thisDir, subItem));
 		}else{
@@ -25,7 +24,6 @@ const getTree = (thisDir = ".") => {
 	});
 };
 getTree();
-console.log(tree);
 const promises = [];
 
 const sleep = delay => new Promise(resolve => setTimeout(resolve, delay));
@@ -59,17 +57,22 @@ const clearAndLog = (...args) => {
 };
 
 const updateBar = () => {
+	cursor.fg.reset();
+	cursor.bg.reset();
+	cursor.font.resetBold().resetItalic().resetUnderline().resetInverse();
 	let {queued, started, finished} = getStatus();
 	const columns = process.stdout.columns - 2;
 	cursor.moveToColumn(0).eraseLine().
-  write("[" + "=".repeat(Math.floor(finished / tree.length * columns)) + " ".repeat(Math.ceil((tree.length - finished) / tree.length * columns)) + "]");
+  write("[" + "█".repeat(Math.floor(finished / tree.length * columns)) + "-".repeat(Math.ceil((tree.length - finished) / tree.length * columns)) + "]");
 };
+
+cursor.fg.blue();
+clearAndLog(tree.join("\n"));
 
 tree.forEach((file, inc) => {
 	queue[file] = 0;
 	updateBar();
 	const isBigFile = fs.statSync(path.join(dir, file)).size / 1000000 > 150;
-	clearAndLog(file, isBigFile);
 	if(isBigFile){
 		queue[file] = 3;
 		updateBar();
@@ -103,10 +106,15 @@ tree.forEach((file, inc) => {
 			updateBar();
 			if(response.status === 429){
 				const delay = parseInt(response.headers.get("Retry-After")) * 1000;
-				clearAndLog("Waiting for", delay, "ms");
+				cursor.fg.red();
+				cursor.font.bold();
+				clearAndLog(file, "could not send, retrying in", delay, "ms");
 				return await fetchIt(delay);
 			}else{
 				const error = await response.text();
+				cursor.fg.red();
+				cursor.font.bold();
+				clearAndLog(file, "could not send! Got status code", response.status, "got error", error);
 				console.error(file, response.status, error);
 			}
 		};
@@ -114,12 +122,19 @@ tree.forEach((file, inc) => {
 	}
 });
 Promise.all(promises).then(() => {
-	clearAndLog("DONE");
+	cursor.font.bold().inverse();
+	cursor.fg.green();
+	console.log("Completed!");
+	cursor.fg.reset();
+	cursor.bg.reset();
+	cursor.font.resetBold().resetItalic().resetUnderline().resetInverse();
 	process.exit();
 });
 
 if(process.stdout.isTTY){
-	clearAndLog("press s for status.");
+	cursor.fg.red();
+	cursor.font.bold();
+	clearAndLog("Press s for status.");
 	process.stdin.setRawMode(true);
 	process.stdin.resume();
 	process.stdin.on("data", (key) => {
@@ -132,6 +147,7 @@ if(process.stdout.isTTY){
 			case "s":
 				let {queued, started, finished} = getStatus();
 				cursor.moveToColumn(0).eraseLine();
+				cursor.fg.green();
 				clearAndLog(`${tree.length} total, ${queued} queued, ${started} started, ${finished} finished`);
 				break;
 			default:
