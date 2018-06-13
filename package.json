@@ -1,6 +1,6 @@
 {
   "name": "dropbox-uploader",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "",
   "main": "index.js",
   "scripts": {
@@ -14,7 +14,7 @@
     "graceful-fs": "^4.1.11",
     "node-fetch": "^2.1.2"
   },
-	"repository": {
+  "repository": {
     "type": "git",
     "url": "git+https://github.com/programmer5000-com/dropbox-uploader.git"
   },
