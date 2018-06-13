@@ -88,11 +88,11 @@ tree.forEach((file, inc) => {
 		const procResponse = async function(response, file, retry){
 			if(response.ok){
 				clearAndLog("uploaded", file);
-				queue[file] = 3;
+				if(file) queue[file] = 3;
 				updateBar();
 				return await response.text();
 			}
-			queue[file] = 0;
+			if(file) queue[file] = 0;
 			updateBar();
 			if(response.status === 429){
 				const delay = parseInt(response.headers.get("Retry-After")) * 1000;
@@ -122,10 +122,112 @@ tree.forEach((file, inc) => {
 		};
 
 		if(isBigFile){
-			let hasChunkLeft = false;
-			while(hasChunkLeft){
+			let hasChunkLeft = true;
+			let lastByte = -1;
 
+			const chunkPromises = [];
+			const startIt = async function(delay, stream){
+				try{
+					console.log("started", file, "with delay", delay);
+					await sleep(delay);
+					const resp = await fetch("https://content.dropboxapi.com/2/files/upload_session/start", {
+						body: stream,
+						headers: {
+							Authorization: "Bearer " + token,
+							"Content-Type": "application/octet-stream",
+							"Dropbox-Api-Arg": JSON.stringify({close: false})
+						},
+						method: "POST"
+					});
+					console.log("start finished sending");
+					const data = await procResponse(resp, null, startIt);
+					return JSON.parse(data).session_id
+				}catch(e){
+					procError(e);
+					return await startIt(500, stream);
+				}
+			};
+
+			while(hasChunkLeft){
+				const thisRange = [lastByte + 1, Math.min(lastByte + 1 + fileSplitSize, thisSize)];
+				const stream = fs.createReadStream(path.join(dir, file), {
+					start: thisRange[0],
+					end: thisRange[1]
+				});
+
+				lastByte = thisRange[1];
+				clearAndLog("chunked", file, "as", thisRange);
+				if(thisRange[1] >= thisSize){
+					hasChunkLeft = false;
+					clearAndLog(file, "is done chunking");
+				}
+				const isFirst = thisRange[0] === 0;
+				if(isFirst){
+					sessionId = await startIt(0, stream);
+				}else{
+					chunkPromises.push(async function (){
+						console.log("got session_id", sessionId, "for file", file, "uploading starting at offset", thisRange[0]);
+
+						const sendThis = async function(delay = 0, stream){
+							try{
+								await sleep(delay);
+								const response = await fetch("https://content.dropboxapi.com/2/files/upload_session/append_v2", {
+								  body: stream,
+								  headers: {
+								    Authorization: "Bearer " + token,
+								    "Content-Type": "application/octet-stream",
+								    "Dropbox-Api-Arg": JSON.stringify({
+											cursor: {
+												offset: thisRange[0],
+												session_id: sessionId
+											},
+											close: false
+										})
+								  },
+								  method: "POST"
+								});
+								console.log("chunk finished sending");
+								procResponse(response, null, sendThis);
+							}catch(e){
+								procError(e);
+								return await sendThis(500, stream);
+							}
+						};
+						await sendThis();
+					});
+				}
 			}
+
+			await Promise.all(chunkPromises);
+			const sendFinal = async function(delay = 0, stream){
+				try{
+					await sleep(delay);
+					const response = await fetch("https://content.dropboxapi.com/2/files/upload_session/append_v2", {
+						body: stream,
+						headers: {
+							Authorization: "Bearer " + token,
+							"Content-Type": "application/octet-stream",
+							"Dropbox-Api-Arg": JSON.stringify({
+								commit: {
+									path: "/" + file,
+									mode: "add",
+									autorename: true,
+									mute: false
+								}
+							})
+						},
+						method: "POST"
+					});
+					console.log("final finished sending");
+					procResponse(response, null, sendThis);
+				}catch(e){
+					procError(e);
+					return await sendFinal(500, stream);
+				}
+			};
+			await sendFinal();
+			console.log("finihed sending big file", file);
+			return;
 		}else{
 			try{
 				const response = await fetch("https://content.dropboxapi.com/2/files/upload", {
