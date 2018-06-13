@@ -12,7 +12,7 @@ const delayAdd = 1000;
 const fileSplitSize = 1000000 * 150;
 const token = fs.readFileSync(path.join(__dirname, "token.txt")).toString().trim();
 
-const dir = "/home/max/Documents/dropbox-test";
+const dir = process.argv[2];
 const tree = [];
 
 const getTree = (thisDir = ".") => {
@@ -73,7 +73,8 @@ clearAndLog(tree.join("\n"));
 tree.forEach((file, inc) => {
 	queue[file] = 0;
 	updateBar();
-	const isBigFile = fs.statSync(path.join(dir, file)).size > fileSplitSize;
+	const thisSize = fs.statSync(path.join(dir, file)).size;
+	const isBigFile = thisSize > fileSplitSize;
 	const fetchIt = async function(delay){
 		await sleep(delay);
 		queue[file] = 1;
@@ -121,7 +122,10 @@ tree.forEach((file, inc) => {
 		};
 
 		if(isBigFile){
+			let hasChunkLeft = true;
+			while(hasChunkLeft){
 
+			}
 		}else{
 			try{
 				const response = await fetch("https://content.dropboxapi.com/2/files/upload", {
