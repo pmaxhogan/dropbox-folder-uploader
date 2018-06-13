@@ -7,8 +7,9 @@ const cursor = ansi(process.stdout);
 
 const ESC = "\x1B[";
 
-const bypass = true;
+const bypass = false;
 const delayAdd = 1000;
+const fileSplitSize = 1000000 * 150;
 const token = fs.readFileSync(path.join(__dirname, "token.txt")).toString().trim();
 
 const dir = "/home/max/Documents/dropbox-test";
@@ -72,30 +73,18 @@ clearAndLog(tree.join("\n"));
 tree.forEach((file, inc) => {
 	queue[file] = 0;
 	updateBar();
-	const isBigFile = fs.statSync(path.join(dir, file)).size / 1000000 > 150;
-	if(isBigFile){
-		queue[file] = 3;
+	const isBigFile = fs.statSync(path.join(dir, file)).size > fileSplitSize;
+	const fetchIt = async function(delay){
+		await sleep(delay);
+		queue[file] = 1;
 		updateBar();
-	}else{
-
-		const fetchIt = async function(delay){
-			await sleep(delay);
-			queue[file] = 1;
+		if(bypass){
+			await sleep(1000);
+			return queue[file] = 3;
 			updateBar();
-			if(bypass){
-				await sleep(1000);
-				return queue[file] = 3;
-				updateBar();
-			}
-			const response = await fetch("https://content.dropboxapi.com/2/files/upload", {
-			  body: fs.createReadStream(path.join(dir, file)),
-			  headers: {
-			    Authorization: "Bearer " + token,
-			    "Content-Type": "application/octet-stream",
-			    "Dropbox-Api-Arg": JSON.stringify({"path": "/" + file, "mode": "add","autorename": true,"mute": false})
-			  },
-			  method: "POST"
-			});
+		}
+
+		const procResponse = async function(response, file, retry){
 			if(response.ok){
 				clearAndLog("uploaded", file);
 				queue[file] = 3;
@@ -109,19 +98,52 @@ tree.forEach((file, inc) => {
 				cursor.fg.red();
 				cursor.font.bold();
 				clearAndLog(file, "could not send, retrying in", delay, "ms");
-				return await fetchIt(delay);
+				return await retry(delay);
 			}else{
 				const error = await response.text();
 				cursor.fg.red();
 				cursor.font.bold();
 				clearAndLog(file, "could not send! Got status code", response.status, "got error", error);
-				console.error(file, response.status, error);
+				return await retry(500);
 			}
 		};
-		promises.push(fetchIt(inc * delayAdd));
-	}
+
+		const procError = e => {
+			if(e.code === "ENOTFOUND"){
+				cursor.fg.red();
+				cursor.font.bold();
+				clearAndLog("Got ENOTFOUND! Are you connected to the internet? Retrying in 500ms...");
+			}else{
+				cursor.fg.red();
+				cursor.font.bold();
+				clearAndLog("Unknown error", e.code, "! Retrying in 500ms...");
+			}
+		};
+
+		if(isBigFile){
+
+		}else{
+			try{
+				const response = await fetch("https://content.dropboxapi.com/2/files/upload", {
+				  body: fs.createReadStream(path.join(dir, file)),
+				  headers: {
+				    Authorization: "Bearer " + token,
+				    "Content-Type": "application/octet-stream",
+				    "Dropbox-Api-Arg": JSON.stringify({"path": "/" + file, "mode": "add","autorename": true,"mute": false})
+				  },
+				  method: "POST"
+				});
+				return await procResponse(response, file, fetchIt);
+			}catch(e){
+				procError(e);
+				return await fetchIt(500);
+			}
+		}
+	};
+	promises.push(fetchIt(inc * delayAdd));
 });
 Promise.all(promises).then(() => {
+	console.log(queue);
 	cursor.font.bold().inverse();
 	cursor.fg.green();
 	console.log("Completed!");
@@ -151,7 +173,7 @@ if(process.stdout.isTTY){
 				clearAndLog(`${tree.length} total, ${queued} queued, ${started} started, ${finished} finished`);
 				break;
 			default:
-				clearAndLog("unknown key");
+				clearAndLog("unknown command");
     }
 	});
 }
