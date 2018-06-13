@@ -67,8 +67,23 @@ const updateBar = () => {
   write("[" + "█".repeat(Math.floor(finished / tree.length * columns)) + "-".repeat(Math.ceil((tree.length - finished) / tree.length * columns)) + "]");
 };
 
+const log = (...args) => {
+	clearAndLog(...args);
+};
+
+const verbose = (...args) => {
+	cursor.fg.blue();
+	clearAndLog(...args);
+};
+
+const error = (...args) => {
+	cursor.fg.red();
+	cursor.font.bold();
+	clearAndLog(...args);
+};
+
 cursor.fg.blue();
-clearAndLog(tree.join("\n"));
+log(tree.join("\n"));
 
 tree.forEach((file, inc) => {
 	queue[file] = 0;
@@ -87,7 +102,7 @@ tree.forEach((file, inc) => {
 
 		const procResponse = async function(response, file, retry){
 			if(response.ok){
-				clearAndLog("uploaded", file);
+				log("uploaded", file);
 				if(file) queue[file] = 3;
 				updateBar();
 				return await response.text();
@@ -96,28 +111,20 @@ tree.forEach((file, inc) => {
 			updateBar();
 			if(response.status === 429){
 				const delay = parseInt(response.headers.get("Retry-After")) * 1000;
-				cursor.fg.red();
-				cursor.font.bold();
-				clearAndLog(file, "could not send, retrying in", delay, "ms");
+				error(file, "could not send, retrying in", delay, "ms");
 				return await retry(delay);
 			}else{
 				const error = await response.text();
-				cursor.fg.red();
-				cursor.font.bold();
-				clearAndLog(file, "could not send! Got status code", response.status, "got error", error);
+				error(file, "could not send! Got status code", response.status, "got error", error);
 				return await retry(500);
 			}
 		};
 
 		const procError = e => {
 			if(e.code === "ENOTFOUND"){
-				cursor.fg.red();
-				cursor.font.bold();
-				clearAndLog("Got ENOTFOUND! Are you connected to the internet? Retrying in 500ms...");
+				error("Got ENOTFOUND! Are you connected to the internet? Retrying in 500ms...");
 			}else{
-				cursor.fg.red();
-				cursor.font.bold();
-				clearAndLog("Unknown error", e.code, "! Retrying in 500ms...", e);
+				error("Unknown error", e.code, "! Retrying in 500ms...", e);
 			}
 		};
 
@@ -128,7 +135,7 @@ tree.forEach((file, inc) => {
 			const chunkPromises = [];
 			const startIt = async function(delay, stream){
 				try{
-					clearAndLog("started", file, "with delay", delay);
+					verbose("started", file, "with delay", delay);
 					await sleep(delay);
 					const resp = await fetch("https://content.dropboxapi.com/2/files/upload_session/start", {
 						body: stream,
@@ -139,7 +146,7 @@ tree.forEach((file, inc) => {
 						},
 						method: "POST"
 					});
-					clearAndLog("start finished sending");
+					verbose("start finished sending");
 					const data = await procResponse(resp, null, startIt);
 					return JSON.parse(data).session_id
 				}catch(e){
@@ -151,10 +158,10 @@ tree.forEach((file, inc) => {
 			while(hasChunkLeft){
 				const thisRange = [lastByte + 1, Math.min(lastByte + 1 + fileSplitSize, thisSize)];
 
-				clearAndLog("chunked", file, "as", thisRange);
+				verbose("chunked", file, "as", thisRange);
 				if(thisRange[1] >= thisSize){
 					hasChunkLeft = false;
-					clearAndLog(file, "is done chunking");
+					verbose(file, "is done chunking");
 					break;
 				}
 				lastByte = thisRange[1];
@@ -167,7 +174,7 @@ tree.forEach((file, inc) => {
 					sessionId = await startIt(0, stream);
 				}else{
 					chunkPromises.push(async function (){
-						clearAndLog("got session_id", sessionId, "for file", file, "uploading starting at offset", thisRange[0]);
+						verbose("got session_id", sessionId, "for file", file, "uploading starting at offset", thisRange[0]);
 
 						const sendThis = async function(delay = 0, stream){
 							try{
@@ -187,7 +194,7 @@ tree.forEach((file, inc) => {
 								  },
 								  method: "POST"
 								});
-								clearAndLog("chunk finished sending");
+								verbose("chunk finished sending");
 								procResponse(response, null, sendThis);
 							}catch(e){
 								procError(e);
@@ -227,7 +234,7 @@ tree.forEach((file, inc) => {
 						},
 						method: "POST"
 					});
-					clearAndLog("final finished sending", thisSize);
+					verbose("final finished sending", thisSize);
 					procResponse(response, null, sendFinal);
 				}catch(e){
 					procError(e);
@@ -235,7 +242,7 @@ tree.forEach((file, inc) => {
 				}
 			};
 			await sendFinal(0, stream);
-			clearAndLog("finished sending big file", file);
+			log("finished sending big file", file);
 			queue[file] = 3;
 			return;
 		}else{
@@ -259,7 +266,7 @@ tree.forEach((file, inc) => {
 	promises.push(fetchIt(inc * delayAdd));
 });
 Promise.all(promises).then(() => {
-	clearAndLog(queue);
+	log(queue);
 	cursor.font.bold();
 	cursor.fg.green();
 	cursor.bg.black();
