@@ -9,7 +9,7 @@ const ESC = "\x1B[";
 
 const bypass = false;
 const delayAdd = 1000;
-const fileSplitSize = 1000000 * 150;
+const fileSplitSize = 1 * 150;//1000000 * 150
 const token = fs.readFileSync(path.join(__dirname, "token.txt")).toString().trim();
 
 const dir = process.argv[2];
@@ -117,7 +117,7 @@ tree.forEach((file, inc) => {
 			}else{
 				cursor.fg.red();
 				cursor.font.bold();
-				clearAndLog("Unknown error", e.code, "! Retrying in 500ms...");
+				clearAndLog("Unknown error", e.code, "! Retrying in 500ms...", e);
 			}
 		};
 
@@ -128,7 +128,7 @@ tree.forEach((file, inc) => {
 			const chunkPromises = [];
 			const startIt = async function(delay, stream){
 				try{
-					console.log("started", file, "with delay", delay);
+					clearAndLog("started", file, "with delay", delay);
 					await sleep(delay);
 					const resp = await fetch("https://content.dropboxapi.com/2/files/upload_session/start", {
 						body: stream,
@@ -139,7 +139,7 @@ tree.forEach((file, inc) => {
 						},
 						method: "POST"
 					});
-					console.log("start finished sending");
+					clearAndLog("start finished sending");
 					const data = await procResponse(resp, null, startIt);
 					return JSON.parse(data).session_id
 				}catch(e){
@@ -150,23 +150,24 @@ tree.forEach((file, inc) => {
 
 			while(hasChunkLeft){
 				const thisRange = [lastByte + 1, Math.min(lastByte + 1 + fileSplitSize, thisSize)];
-				const stream = fs.createReadStream(path.join(dir, file), {
-					start: thisRange[0],
-					end: thisRange[1]
-				});
 
-				lastByte = thisRange[1];
 				clearAndLog("chunked", file, "as", thisRange);
 				if(thisRange[1] >= thisSize){
 					hasChunkLeft = false;
 					clearAndLog(file, "is done chunking");
+					return;
 				}
+				lastByte = thisRange[1];
+				const stream = fs.createReadStream(path.join(dir, file), {
+					start: thisRange[0],
+					end: thisRange[1]
+				});
 				const isFirst = thisRange[0] === 0;
 				if(isFirst){
 					sessionId = await startIt(0, stream);
 				}else{
 					chunkPromises.push(async function (){
-						console.log("got session_id", sessionId, "for file", file, "uploading starting at offset", thisRange[0]);
+						clearAndLog("got session_id", sessionId, "for file", file, "uploading starting at offset", thisRange[0]);
 
 						const sendThis = async function(delay = 0, stream){
 							try{
@@ -186,7 +187,7 @@ tree.forEach((file, inc) => {
 								  },
 								  method: "POST"
 								});
-								console.log("chunk finished sending");
+								clearAndLog("chunk finished sending");
 								procResponse(response, null, sendThis);
 							}catch(e){
 								procError(e);
@@ -199,15 +200,23 @@ tree.forEach((file, inc) => {
 			}
 
 			await Promise.all(chunkPromises);
+			const stream = fs.createReadStream(path.join(dir, file), {
+				start: lastByte,
+				end: thisSize
+			});
 			const sendFinal = async function(delay = 0, stream){
 				try{
 					await sleep(delay);
-					const response = await fetch("https://content.dropboxapi.com/2/files/upload_session/append_v2", {
+					const response = await fetch("https://content.dropboxapi.com/2/files/upload_session/finish", {
 						body: stream,
 						headers: {
 							Authorization: "Bearer " + token,
 							"Content-Type": "application/octet-stream",
 							"Dropbox-Api-Arg": JSON.stringify({
+								cursor: {
+						        "session_id": sessionId,
+						        "offset": thisSize
+						    },
 								commit: {
 									path: "/" + file,
 									mode: "add",
@@ -218,15 +227,15 @@ tree.forEach((file, inc) => {
 						},
 						method: "POST"
 					});
-					console.log("final finished sending");
-					procResponse(response, null, sendThis);
+					clearAndLog("final finished sending", thisSize);
+					procResponse(response, null, sendFinal);
 				}catch(e){
 					procError(e);
 					return await sendFinal(500, stream);
 				}
 			};
-			await sendFinal();
-			console.log("finihed sending big file", file);
+			await sendFinal(0, stream);
+			clearAndLog("finihed sending big file", file);
 			return;
 		}else{
 			try{
@@ -249,10 +258,10 @@ tree.forEach((file, inc) => {
 	promises.push(fetchIt(inc * delayAdd));
 });
 Promise.all(promises).then(() => {
-	console.log(queue);
+	clearAndLog(queue);
 	cursor.font.bold().inverse();
 	cursor.fg.green();
-	console.log("Completed!");
+	clearAndLog("Completed!");
 	cursor.fg.reset();
 	cursor.bg.reset();
 	cursor.font.resetBold().resetItalic().resetUnderline().resetInverse();
