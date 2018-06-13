@@ -1,4 +1,4 @@
-# dropbox-uploader
+# dropbox-folder-uploader
 Upload a directory to dropbox.
 
 ## Usage
