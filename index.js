@@ -15,18 +15,20 @@ node ${__filename} /path/to/dropbox/folder/to/upload
 
 const bypass = false;
 const delayAdd = 1000;
-const fileSplitSize = 1 * 150;//1000000 * 150
+const fileSplitSize = 1000000 * 150;//1000000 * 150
 const token = fs.readFileSync(path.join(__dirname, "token.txt")).toString().trim();
 
 const dir = process.argv[2];
+console.log(dir);
 const tree = [];
 
 const getTree = (thisDir = ".") => {
+	console.log(thisDir);
 	fs.readdirSync(path.join(dir, thisDir)).forEach(subItem => {
 		if(fs.statSync(path.join(dir, thisDir, subItem)).isFile()){
 			tree.push(path.join(thisDir, subItem));
 		}else{
-			getTree(subItem);
+			getTree(path.join(thisDir, subItem));
 		}
 	});
 };
