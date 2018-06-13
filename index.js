@@ -155,7 +155,7 @@ tree.forEach((file, inc) => {
 				if(thisRange[1] >= thisSize){
 					hasChunkLeft = false;
 					clearAndLog(file, "is done chunking");
-					return;
+					break;
 				}
 				lastByte = thisRange[1];
 				const stream = fs.createReadStream(path.join(dir, file), {
@@ -201,7 +201,7 @@ tree.forEach((file, inc) => {
 
 			await Promise.all(chunkPromises);
 			const stream = fs.createReadStream(path.join(dir, file), {
-				start: lastByte,
+				start: lastByte + 1,
 				end: thisSize
 			});
 			const sendFinal = async function(delay = 0, stream){
@@ -215,7 +215,7 @@ tree.forEach((file, inc) => {
 							"Dropbox-Api-Arg": JSON.stringify({
 								cursor: {
 						        "session_id": sessionId,
-						        "offset": thisSize
+						        "offset": lastByte + 1
 						    },
 								commit: {
 									path: "/" + file,
@@ -235,7 +235,8 @@ tree.forEach((file, inc) => {
 				}
 			};
 			await sendFinal(0, stream);
-			clearAndLog("finihed sending big file", file);
+			clearAndLog("finished sending big file", file);
+			queue[file] = 3;
 			return;
 		}else{
 			try{
@@ -259,8 +260,9 @@ tree.forEach((file, inc) => {
 });
 Promise.all(promises).then(() => {
 	clearAndLog(queue);
-	cursor.font.bold().inverse();
+	cursor.font.bold();
 	cursor.fg.green();
+	cursor.bg.black();
 	clearAndLog("Completed!");
 	cursor.fg.reset();
 	cursor.bg.reset();
