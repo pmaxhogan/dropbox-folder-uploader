@@ -266,11 +266,13 @@ tree.forEach((file, inc) => {
 	promises.push(fetchIt(inc * delayAdd));
 });
 Promise.all(promises).then(() => {
-	log(queue);
+	log(tree.join("\n"));
+	log("Successfully uploaded", tree.length, "files!");
 	cursor.font.bold();
 	cursor.fg.green();
 	cursor.bg.black();
-	clearAndLog("Completed!");
+	cursor.moveToColumn(0).eraseLine();
+	console.log("Completed!");
 	cursor.fg.reset();
 	cursor.bg.reset();
 	cursor.font.resetBold().resetItalic().resetUnderline().resetInverse();
