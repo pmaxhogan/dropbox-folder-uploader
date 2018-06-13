@@ -5,7 +5,13 @@ const readline = require("readline");
 const ansi = require("ansi.js");
 const cursor = ansi(process.stdout);
 
-const ESC = "\x1B[";
+if(process.argv.length > 3 || process.argv.length < 3 || process.argv[2] === "--help" || process.argv[2] === "-h"){
+	console.log(`
+Usage:
+node ${__filename} /path/to/dropbox/folder/to/upload
+`);
+	process.exit();
+}
 
 const bypass = false;
 const delayAdd = 1000;
