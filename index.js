@@ -2,32 +2,44 @@ const fs = require("fs");
 const path = require("path");
 const fetch = require("node-fetch");
 const ansi = require("ansi.js");
+const commander = require("commander");
 const cursor = ansi(process.stdout);
 
-if(process.argv.length > 3 || process.argv.length < 3 || process.argv[2] === "--help" || process.argv[2] === "-h"){
-	console.log(`
-Usage:
-node ${__filename} /path/to/dropbox/folder/to/upload
-`);
-	process.exit();
-}
+commander.
+	version(require("./package.json").version).
+	option("-v, --verbose", "Show extra debug output.").
+	option("-t, --timeout <ms>", "Wait for n ms between uploads and before retrying failed requests. Default: 500").
+	option("-T, --token [token]", "Use this token (instead of " + __dirname + "/token.txt" + ") for the Dropbox API");
+
+commander.parse(process.argv);
 
 const bypass = false;
-const delayAdd = 1000;
+const delayAdd = parseInt(commander.timeout) || 500;
 const fileSplitSize = 1000000 * 150;//1000000 * 150
-const token = fs.readFileSync(path.join(__dirname, "token.txt")).toString().trim();
+const token = commander.token || fs.readFileSync(path.join(__dirname, "token.txt")).toString().trim();
 
-const dir = process.argv[2];
+const dir = commander.args[0];
 const tree = [];
 
 const getTree = (thisDir = ".") => {
-	fs.readdirSync(path.join(dir, thisDir)).forEach(subItem => {
-		if(fs.statSync(path.join(dir, thisDir, subItem)).isFile()){
-			tree.push(path.join(thisDir, subItem));
-		}else{
-			getTree(path.join(thisDir, subItem));
+	try{
+		fs.readdirSync(path.join(dir, thisDir)).forEach(subItem => {
+			if(fs.statSync(path.join(dir, thisDir, subItem)).isFile()){
+				tree.push(path.join(thisDir, subItem));
+			}else{
+				getTree(path.join(thisDir, subItem));
+			}
+		});
+	}catch(e){
+		if(e.code === "ENOENT"){
+			cursor.fg.red();
+			cursor.font.bold();
+			console.error("Directory", path.join(dir, thisDir), "could not be found!");
+			cursor.font.resetBold();
+			cursor.fg.reset();
+			process.exit(1);
 		}
-	});
+	}
 };
 getTree();
 const promises = [];
@@ -73,11 +85,12 @@ const updateBar = () => {
 };
 
 const log = (...args) => {
+	cursor.fg.blue();
 	clearAndLog(...args);
 };
 
 const verbose = (...args) => {
-	cursor.fg.blue();
+	if(!commander.verbose) return;
 	clearAndLog(...args);
 };
 
@@ -106,6 +119,7 @@ tree.forEach((file, inc) => {
 		}
 
 		const procResponse = async function(response, file, retry){
+			verbose("file", file, "had response", response.status);
 			if(response.ok){
 				log("uploaded", file);
 				if(file) queue[file] = 3;
@@ -121,15 +135,15 @@ tree.forEach((file, inc) => {
 			}else{
 				const error = await response.text();
 				error(file, "could not send! Got status code", response.status, "got error", error);
-				return await retry(500);
+				return await retry(delayAdd);
 			}
 		};
 
 		const procError = e => {
 			if(e.code === "ENOTFOUND"){
-				error("Got ENOTFOUND! Are you connected to the internet? Retrying in 500ms...");
+				error("Got ENOTFOUND! Are you connected to the internet? Retrying in " + delayAdd + "ms...");
 			}else{
-				error("Unknown error", e.code, "! Retrying in 500ms...", e);
+				error("Unknown error", e.code, "! Retrying in " + delayAdd + "ms...", e);
 			}
 		};
 
@@ -156,7 +170,7 @@ tree.forEach((file, inc) => {
 					return JSON.parse(data).session_id;
 				}catch(e){
 					procError(e);
-					return await startIt(500, stream);
+					return await startIt(delayAdd, stream);
 				}
 			};
 
@@ -205,7 +219,7 @@ tree.forEach((file, inc) => {
 								procResponse(response, null, sendThis);
 							}catch(e){
 								procError(e);
-								return await sendThis(500, stream);
+								return await sendThis(delayAdd, stream);
 							}
 						};
 						await sendThis();
@@ -245,7 +259,7 @@ tree.forEach((file, inc) => {
 					procResponse(response, null, sendFinal);
 				}catch(e){
 					procError(e);
-					return await sendFinal(500, stream);
+					return await sendFinal(delayAdd, stream);
 				}
 			};
 			await sendFinal(0, stream);
@@ -254,6 +268,7 @@ tree.forEach((file, inc) => {
 			return;
 		}else{
 			try{
+				verbose("uploading", file);
 				const response = await fetch("https://content.dropboxapi.com/2/files/upload", {
 					body: fs.createReadStream(path.join(dir, file)),
 					headers: {
@@ -263,10 +278,11 @@ tree.forEach((file, inc) => {
 					},
 					method: "POST"
 				});
+				verbose("uploaded", file);
 				return await procResponse(response, file, fetchIt);
 			}catch(e){
 				procError(e);
-				return await fetchIt(500);
+				return await fetchIt(delayAdd);
 			}
 		}
 	};
@@ -277,13 +293,11 @@ Promise.all(promises).then(() => {
 	log(tree.join("\n"));
 	log("Successfully uploaded", tree.length, "files!");
 	cursor.moveToColumn(0).eraseLine();
-	cursor.font.bold();
+	cursor.font.bold().inverse();
 	cursor.fg.green();
-	cursor.bg.black();
 	cursor.write("Completed!\n\n");
-	cursor.fg.reset();
-	cursor.bg.white();
-	cursor.font.resetBold();
+	cursor.fg.black();
+	cursor.font.resetBold().resetInverse();
 	process.stdout.write("\x1B[m");
 	setImmediate(process.exit);
 });
