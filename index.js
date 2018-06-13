@@ -122,7 +122,7 @@ tree.forEach((file, inc) => {
 		};
 
 		if(isBigFile){
-			let hasChunkLeft = true;
+			let hasChunkLeft = false;
 			while(hasChunkLeft){
 
 			}
