@@ -19,11 +19,9 @@ const fileSplitSize = 1000000 * 150;//1000000 * 150
 const token = fs.readFileSync(path.join(__dirname, "token.txt")).toString().trim();
 
 const dir = process.argv[2];
-console.log(dir);
 const tree = [];
 
 const getTree = (thisDir = ".") => {
-	console.log(thisDir);
 	fs.readdirSync(path.join(dir, thisDir)).forEach(subItem => {
 		if(fs.statSync(path.join(dir, thisDir, subItem)).isFile()){
 			tree.push(path.join(thisDir, subItem));
@@ -283,9 +281,10 @@ Promise.all(promises).then(() => {
 	cursor.bg.black();
 	cursor.write("Completed!\n\n");
 	cursor.fg.reset();
-	cursor.bg.reset();
-	cursor.font.resetBold().resetItalic().resetUnderline();
-	process.exit();
+	cursor.bg.white();
+	cursor.font.resetBold();
+	process.stdout.write("\x1B[m");
+	setImmediate(process.exit);
 });
 
 if(process.stdout.isTTY){
