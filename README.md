@@ -5,4 +5,4 @@ Upload a directory to dropbox.
 
 Create a file `token.txt` in wherever you cloned dropbox-folder-uploader. Put in a dropbox token that can be used to access you account.
 
-Then run `node . /path/to/dropbox/folder/to/upload`
+Then run `node . /path/to/dropbox/folder/to/upload`. See `node . --help` for more info.
